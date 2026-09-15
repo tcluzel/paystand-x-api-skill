@@ -1,7 +1,7 @@
 ---
 name: psx-api
 description: "Build an integration against the Paystand X (PSX) REST API — authentication, endpoints, webhooks, ERP sync patterns, sandbox testing, reconciliation, and known gotchas. Use when integrating an ERP or middleware/iPaaS with Paystand X, or when the user mentions Paystand X, PSX, the Paystand X API, receivables/payments sync, or Paystand webhooks."
-version: 1.0.0
+version: 1.1.0
 license: "Provided by Paystand for integration partners. Free to use and redistribute."
 ---
 

@@ -26,6 +26,55 @@ Generalized from production integration issues (customer names, ticket numbers, 
 - **Stage 1 — synchronous:** invalid/wrongly-formatted bank details are rejected immediately by the API at save/charge time; the account isn't saved and you get the error inline.
 - **Stage 2 — asynchronous:** if details are valid, the ACH goes to the bank and the payment shows `posted`; it can still be **returned/charged back days later** (e.g. NSF). Paystand notifies the **merchant** by email + dashboard with the reason — **NOT the payer.** To alert your customer and send a manual pay link, orchestrate it yourself (detect via notification/API, then send a Paystand payment link).
 
+## `POST /payments/secure` — unapplied-payment & Sage Intacct caveats
+
+- **Omitting `receivableId` creates an UNAPPLIED payment.** It is a generic payment not linked to any receivable ledger entry, ERP-sync event, or AR-Advance entitlement — it is **not** the same as an AR Advance. If your plan tracks AR and you need advance/prepayment tied to the ledger, use AR Advance, not a bare `/payments/secure`.
+- **Sage Intacct-connected merchants: `receivableId` is REQUIRED.** Without it the request returns a validation error — Sage merchants must route payments through a receivable (Create Receivable + linked payment) so cash applies correctly in Sage.
+
+## Saving a payment method: BANK has a REST API, CARD does not
+
+- **Bank/ACH — fully documented REST.** `POST /payers/:payerId/banks` → micro-deposit verify (`…/banks/:bankId/drops`) → charge via `POST /payments/secure` with `bankId`. (Flow above.)
+- **Card — there is NO documented endpoint to create/save a card.** The public reference has **no `Add Card` / `POST …/cards` operation** — the Payers section documents only *Add Bank Account*. You **cannot POST raw card details as JSON.**
+  - You obtain a `cardId` (a saved-card token) through the **hosted “Save Payment Method” embed or tokenization link** (payer enters the card on Paystand's page). This is deliberate — it keeps raw card PANs off your servers and out of your PCI-DSS scope.
+  - Once you have the token, **charging a saved card IS a documented API**: `POST /payments/secure` with `cardId` + `payerId` + `amount` + `currency`.
+  - If you need a server-to-server card-tokenization API specifically, that is not in the public docs — request it from your Paystand contact. Do not assume a `POST /payers/:id/cards` body exists.
+
+## Merchant-initiated charges are NOT auto-surcharged — it's TWO calls: quote, then pay
+
+At **hosted checkout**, Paystand resolves the Fees & Incentives plan and adds the payer convenience fee automatically. Over the **API** (`POST /payments/secure`), **the plan is NOT consulted** — Paystand charges **exactly the `amount` you send**. Verified: against a plan with a $10 flat card fee, a $100 charge sent with no `feeSplit` came back `payerTotalFees: 0.00`, `payerTotal: 100.00` — the fee never applied and the merchant absorbed the processing cost.
+
+The convenience fee is a **two-call flow**: **quote → pay.** Ask `splitFees` what the payer owes, then send that back on the payment. Skip the first call and there's no fee; make it but don't pass the result along and there's *still* no fee.
+
+**1. Quote — `POST /v3/feeSplits/splitFees`** (for a merchant on their default plan, `subtotal` + `currency` is the whole request):
+```json
+{ "subtotal": "100.00", "currency": "USD" }
+```
+Returns a per-rail breakdown, e.g. a plan set to 3.5% on card:
+```json
+{
+  "cardPayments": {
+    "feeType": "cardPayment.posted",
+    "feeSplitType": "recoup_custom_of_subtotal",
+    "customRate": "0.035", "customFlat": "0.00",
+    "subtotal": "100.00", "payerTotalFees": "3.50", "payerTotal": "103.50"
+  },
+  "achBankPayments": { "feeSplitType": "absorb_all_fees", "payerTotalFees": "0.00", "payerTotal": "100.00" }
+}
+```
+(For AR/receivable context, also pass `provider: receivable`, `payerId`, `invoiceId` so the right plan resolves.)
+
+**2. Pay — `POST /v3/payments/secure`** — charge the `payerTotal` and echo the split back:
+```json
+{
+  "cardId": "...", "payerId": "...",
+  "amount": "103.50", "currency": "USD",
+  "feeSplit": { "subtotal": "100.00", "feeSplitType": "recoup_custom_of_subtotal" }
+}
+```
+- **The `feeSplit` you pass back carries `subtotal` + `feeSplitType` only — do NOT echo `customRate`/`customFlat`.** The server re-derives the rate from the plan, so there's less for the integration to get wrong.
+- If the plan is **absorb** (`absorb_all_fees`), `splitFees` returns `payerTotalFees: 0` and the merchant eats the cost — so "call `splitFees` and charge the `payerTotal` it returns" is always correct.
+- **Multiple plans:** to target a specific plan rather than the merchant's default, pass **`feesIncentivesUrlKey`** (or `feeSettingPlanId`) on **both** calls.
+
 ## Receivable create — field names change between request and response (READ THIS)
 
 The single most common “the response is missing the field I just sent” confusion: **every receivable field you send comes back under a different name.** Nothing is missing — it is renamed (or consumed) on write.

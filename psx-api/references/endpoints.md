@@ -17,17 +17,22 @@ Full interactive docs (with request/response schemas and code samples in ~20 lan
 ## Customers (payers)
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/payerCustomers` | Create payer customer. Returns `payerCustomer.id`. |
+| POST | `/payerCustomers` | Create payer customer. Returns `payerCustomer.id` and a nested `payer.id` (funding-source id — used on bank/payment calls; NOT the same as `payerCustomerId`). |
+| GET | `/payerCustomers/:payerCustomerId` | Get one payer customer. |
 | PUT | `/payerCustomers/:payerCustomerId` | Update payer customer. |
-| GET | `/payerCustomers` | List / get payer customers. |
+| GET | `/payerCustomers` | List payer customers. |
 
 ## Receivables (invoices)
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/receivables/create` | Create receivable. Link with `payerCustomerId` OR `extCustomerId` (one required; customer must exist first). `invoiceId` is OPTIONAL (docs stale, still say required). |
-| POST | `/receivables/:receivableId/cancel` | Cancel (void) a receivable → `status: cancelled`. Record remains. |
-| GET | `/receivables` | List receivables (filtered; supports Pattern A date filters). Use this, NOT `/receivables/read` (that only takes limit/offset/order). |
-| GET | `/receivables/:id/transactions` | Per-receivable transaction history (payment/refund applications). No merchant-wide bulk equivalent. |
+| POST | `/receivables/create` | Create receivable. Link with `payerCustomerId` OR `extCustomerId` (one required; customer must exist first). `erpId`/`invoiceId` is OPTIONAL. Fields are renamed on response (see gotchas.md). |
+| GET | `/receivables/:receivableId/read` | Get one receivable — **older/different field set** than create returned. |
+| GET | `/receivables/:receivableId` | Get one receivable — **same shape create returned** (renamed fields). Prefer this to assert against what you created. |
+| PUT | `/receivables/:receivableId/update` | Update a receivable. |
+| POST | `/receivables/:receivableId/cancel` | Cancel (void) → `status: cancelled`. Record remains. |
+| GET | `/receivables` | List receivables (filtered; Pattern A date filters). |
+| GET | `/receivables/read` | Bare list — only `limit`/`offset`/`order` (no date filters). |
+| GET | `/receivables/:receivableId/transactions` | Per-receivable transaction history (payment/refund applications). No merchant-wide bulk equivalent. |
 
 ## Payer banks & direct payments (merchant-initiated / tokenized model)
 | Method | Path | Purpose |
@@ -35,7 +40,7 @@ Full interactive docs (with request/response schemas and code samples in ~20 lan
 | POST | `/payers/:payerId/banks` | Add a bank (ACH) to a payer. Creates `dropped:false, verified:false`. **Put your ref in `meta.externalId`, NOT top-level `externalId`** (top-level triggers a Stripe StripeSetupIntent failure — see gotchas.md). |
 | POST | `/banks/:bankId/drops` | Send the two micro-deposits for verification (arrive ~1–2 business days). |
 | PUT | `/banks/:bankId/drops` | Confirm micro-deposit amounts as whole-cent strings, e.g. `["32","45"]`. Order-independent. |
-| POST | `/payments/secure` | Submit a payment against a verified bank: `bankId`, `payerId`, `amount`, `currency`. |
+| POST | `/payments/secure` | Submit a payment against a verified bank (`bankId`) OR saved card (`cardId`), plus `payerId`, `amount`, `currency`. Optional `receivableId` applies it to an invoice. To surcharge the payer, also pass `feeSplit: {subtotal, feeSplitType}` from a prior `splitFees` call (see gotchas.md) — without it, no convenience fee is applied. |
 
 This is the backbone of the **merchant-triggered payment** model (merchant keeps the ledger, tells Paystand when/how much to charge): create payer → add & verify bank (or tokenize a card) → charge on demand via the payment API → use webhooks for success/failure → use transfers/withdrawals to track funds. Distinct from Paystand **Autopay** (which auto-charges on the receivable due date). Any saved payment method (bank or card) can also be used for Autopay once the payer approves it. For payer-driven “push” payments, send a **payment link** (see main skill) instead.
 
@@ -50,10 +55,14 @@ This is the backbone of the **merchant-triggered payment** model (merchant keeps
 ## Credit memos
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/creditMemos` | Create a credit memo. Requires `extKey`, `status`, numeric `amount`/`amountRemaining`, MM-DD-YYYY dates. |
 | GET | `/creditMemos` | List credit memos (filter with `f.querytype=own`, `by-payerCustomerId`, or `by-erpName` — NO date-range filter). |
+| GET | `/creditMemos/:creditMemoId` | Get one credit memo. |
+| PUT | `/creditMemos/:creditMemoId` | Update a credit memo. |
 | PATCH | `/creditMemos/:creditMemoId/cancel` | Cancel a credit memo. |
+| PATCH | `/creditMemos/:creditMemoId/activate` | Activate a credit memo. |
 
-Create requires `extKey`, `status`, numeric `amount`/`amountRemaining`, and MM-DD-YYYY dates. The API does not APPLY credit memos — apply in ERP and re-sync the receivable.
+The API does NOT auto-apply credit memos to receivables — apply in the ERP and re-sync the receivable.
 
 ## Fees
 | Method | Path | Purpose |
@@ -67,17 +76,21 @@ Merchant processing fees (cost to merchant) ≠ payer fees (recoup/surcharge add
 ## Payments / refunds / disputes
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/payments/:paymentId` | Get one payment (read `feeSplit`, embedded `fees[]`). |
 | GET | `/payments/all` | List payments (Pattern A date filter; also Pattern B `startDate`/`endDate`). `posted` is NOT fee-final. |
-| GET | `/refunds/all` (or `/refunds`) | List refunds (Pattern A). |
-| GET | `/disputes/all` (or `/disputes`) | List disputes (Pattern A). |
+| GET | `/refunds` / `/refunds/all` | List refunds (filtered + unfiltered, Pattern A). |
+| GET | `/refunds/:refundId` | Get one refund. |
+| GET | `/disputes` / `/disputes/all` | List disputes (filtered + unfiltered, Pattern A). |
+| GET | `/disputes/:disputeId` | Get one dispute. |
 
-## Transfers (payouts) / withdrawals
+## Transfers (payouts)
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/transfers` | List transfers (filtered, Pattern A). Use for bank/deposit reconciliation. |
+| GET | `/transfers` | List transfers (filtered, Pattern A). Deposit/payout reconciliation. |
 | GET | `/transfers/all` | List transfers (unfiltered). |
-| GET | `/withdrawals` | List withdrawals (filtered). |
-| GET | `/withdrawals/all` | List withdrawals (unfiltered). |
+| GET | `/transfers/:transferId` | Get one transfer. |
+| GET | `/transfers/:transferId/report` | Get the transfer report — wait until `status: completed`. |
+| GET | `/transfers/:transferId/report/entries` | **The individual payments + fees inside a payout** — map each row into the ERP bank feed. Requires `settings.transfers.report.enabled`. This is how you reconcile a lump deposit to its line items. |
 
 ---
 
@@ -123,3 +136,5 @@ Pattern A supported on: `/receivables`, `/payments/all`, `/refunds` (`/all`), `/
 | Sub-day time windows | Not supported | Calendar-day `f.datestart`/`f.dateend` only |
 | Hard DELETE receivables / payer customers | Not supported | Cancel receivable; update status to `cancelled` |
 | Facilitator/platform tokens | Not required | Plain merchant API credentials |
+| **Create/save a CARD** (`POST …/cards`) | **Not in the public API** | Obtain a `cardId` via the hosted **Save Payment Method** embed / tokenization link (PCI reasons), then charge with `POST /payments/secure` using `cardId`. Only **Add Bank Account** (`POST /payers/:id/banks`) is documented for saving a funding source. |
+| Auto-surcharge the convenience fee on an API charge | Not automatic (only at hosted checkout) | Call `POST /feeSplits/splitFees`, then charge the returned `payerTotal` via `POST /payments/secure` |
