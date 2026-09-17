@@ -45,6 +45,8 @@ Example: **$100 invoice, $3 convenience fee, $2.50 merchant fee, $100.50 deposit
 - Copying an invoice into Paystand does **not** create an ERP journal — the ERP already posted it.
 - The **convenience fee is derived from the payment**, not a Fee event: `amount` ($103) is gross, `feeSplit.subtotal` ($100) applies against the invoice, `feeSplit.payerTotalFees` ($3) posts to a fee-income account.
 - Payment, fee, and settlement arrive as **separate events at different times**, so a receivable can be **closed in the ERP while cash is still in the clearing account** — that's expected, not a bug.
+- **The merchant fee is a separate, later posting.** It is not known at payment time and arrives a short while after (in practice ~30 min), via Fee data / `GET /fees` / embedded `fees[]` — NOT the payment webhook. Post it as its **own JE to a dedicated processing-fee GL account** when it finalizes; don't fold it into the payment receipt at capture. The daily transfer already excludes it, so this JE is what closes the clearing account.
+- **One GL account per fee type** — convenience fee, merchant processing fee, discounts/incentives, disputes — so the connector can split each cleanly. The accounting team owns the small gain/loss between the convenience fee collected and the merchant fee charged.
 - Settlement is **once a day, one lump** covering every payment that day (not once per payment).
 - If a payer settles several invoices in one checkout, you get one Receivable Transaction per invoice sharing a `paymentId` — **sum `amountApplied`; do not also post the parent `payment.amount`** (double-count).
 
