@@ -24,6 +24,7 @@ Generalized from production integration issues (customer names, ticket numbers, 
 
 - **Stage 1 — synchronous:** invalid/wrongly-formatted bank details are rejected immediately by the API at save/charge time; the account isn't saved and you get the error inline.
 - **Stage 2 — asynchronous:** if details are valid, the ACH goes to the bank and the payment shows `posted`; it can still be **returned/charged back days later** (e.g. NSF). Paystand notifies the **merchant** by email + dashboard with the reason — **NOT the payer.** To alert your customer and send a manual pay link, orchestrate it yourself (detect via notification/API, then send a Paystand payment link).
+- **The returned payment does NOT flip to `failed`.** After `paid`, an ACH return surfaces as a **Dispute (`disputeType: Bank`)** on the original payment — `Payment.status` stays `posted`/`paid`; the money moves via the dispute + balances/`disputedAmount`. Reconcile off the dispute, not `Payment.status`. Treat ACH `posted`/`paid` as **provisional for up to 90 days from the debit date**. Full model + dispute lifecycle: see `webhooks.md` → "Payment state model, ACH returns & disputes".
 
 ## `POST /payments/secure` — unapplied-payment & Sage Intacct caveats
 

@@ -69,3 +69,23 @@ The `diff` block tells you *what changed* (previous state + changes) — use it 
 | Withdrawal | `GET /withdrawals` (filtered) | Yes | No dedicated public webhook page |
 
 Prefer webhooks where possible; fall back to the polling matrix (see `references/endpoints.md`) when inbound HTTPS isn't available.
+
+## Payment state model, ACH returns & disputes (authoritative — Paystand Product, 2026-09)
+
+The forward payment lifecycle is `created → processing → posted → paid` (or `failed`). **A payment never transitions backward out of `paid`/`posted` — that transition is not allowed.** Reversals are always represented as a **separate resource keyed by `paymentId`**, never by rewriting `Payment.status`.
+
+- **ACH/eCheck returns (NSF, unauthorized, account closed):** the original payment **stays `posted`/`paid`**. The return arrives as a **Dispute with `disputeType: Bank`** on that payment; what actually moves is the **dispute plus balances / `disputedAmount`**. **Reconcile off the dispute event, not `Payment.status`.**
+- **Card chargebacks:** same model — a Dispute linked by `paymentId`. When it resolves `lost` (funds returned to payer) or `won` (funds returned to merchant), the outcome lives on the **Dispute object**; the Payment remains `paid`. Reconcile from the dispute (and its `fees[]`).
+- **ACH is provisional after `posted`/`paid`.** Treat both as provisional until the return window passes: **up to 90 days from the debit date**. ACH returns are **not contestable**; NSF-type returns often come back within days, unauthorized can appear later in the window. (For cards, `posted` ≈ funds captured, fees finalizing separately.)
+
+### Dispute lifecycle (business status on the dispute resource)
+
+```
+created → processing → acceptingEvidence → underReview → won | lost
+```
+
+- Detect via webhooks: **`dispute.created`, `dispute.processing`, `dispute.won`, `dispute.lost`**. Poll `GET /disputes` (or `GET /disputes/:disputeId`) as a fallback if an event is missed.
+- ⚠️ **Do not read the dispute's business status from the event envelope.** The top-level `status: active` on the event wrapper is the **delivery/envelope** status, not the dispute's state — read the dispute state from the dispute **resource**.
+- ⚠️ **Docs discrepancy (as of 2026-09):** the public `webhooks/dispute-events` page lists dispute statuses as `created → processing → active → won/lost/failed`. That is **stale/misleading** — the authoritative business states are the five above (`acceptingEvidence`/`underReview`, not `active`/`failed`). Prefer this list.
+
+**Design rule:** model reversals as a separate channel keyed by `paymentId` (Dispute events + Refund events for merchant-initiated refunds), not by watching `Payment.status` flip. This covers both card chargebacks and ACH returns. Webhooks are at-least-once — dedupe on event `id`.
