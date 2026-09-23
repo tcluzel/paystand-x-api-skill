@@ -17,7 +17,7 @@ Webhooks are HTTP POST callbacks Paystand sends when AR events occur (payment ap
   "object": "event",
   "id": "unique_event_id",
   "resource": {
-    "object": "payment",   // payment | receivableTransactions | refund | dispute | transfer | fee | creditMemo
+    "object": "payment",   // payment | receivableTransaction | refund | dispute | transfer | fee | creditMemo
     "id": "...",
     "status": "paid"
     // ...resource data

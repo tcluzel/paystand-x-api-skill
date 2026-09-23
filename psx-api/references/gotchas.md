@@ -4,10 +4,9 @@ Generalized from production integration issues (customer names, ticket numbers, 
 
 ## Auth & scope
 
-- **`insufficient_scope` / 403 has TWO common causes** (verified by reproducing a partner's exact failing calls). A request missing EITHER returns `insufficient_scope`:
-  1. **Token requested without `scope: "auth"`.** Omitting `scope` returns a token that *looks* valid but has no scope attached, and every subsequent call 403s. A correct token response **echoes `"scope": "auth"`** back — if that field is absent, the token is dead. Always send `scope:"auth"` in the `/oauth/token` body.
-  2. **Missing `X-CUSTOMER-ID` header.** The Bearer token alone is NOT sufficient — `X-CUSTOMER-ID` must accompany it on every call.
+- **`insufficient_scope` / 403 → the token was requested without `scope: "auth"`.** Omitting `scope` returns a token that *looks* valid but has no scope attached, and every subsequent call 403s with `insufficient_scope`. A correct token response **echoes `"scope": "auth"`** back — if that field is absent, the token is dead. Always send `scope:"auth"` in the `/oauth/token` body.
   Also confirm API keys are enabled on the merchant's API Plan Settings (`show_api_keys`) in Dashboard → Integrations.
+- **Missing `X-CUSTOMER-ID` → 401 `insufficientResourceAccess`** (not 403). The Bearer token alone is NOT sufficient — `X-CUSTOMER-ID` must accompany it on every call.
 - **401 on Get Customer** → you're using the wrong customer ID. `payerCustomer.id` is NOT the same as `payment.payerId` unless that payer is listed under your merchant. Sending an ID that isn't under your merchant returns 401.
 - **401 on `GET /fees` / `GET /feeSettingPlan/{id}`** under Integrations OAuth is a known gap on some merchants. Fall back to embedded `fees[]` on Get Payment or Fee Event webhooks.
 
@@ -72,7 +71,8 @@ Returns a per-rail breakdown, e.g. a plan set to 3.5% on card:
 }
 ```
 - **The `feeSplit` you pass back carries `subtotal` + `feeSplitType` only — do NOT echo `customRate`/`customFlat`.** The server re-derives the rate from the plan, so there's less for the integration to get wrong.
-- If the plan is **absorb** (`absorb_all_fees`), `splitFees` returns `payerTotalFees: 0` and the merchant eats the cost — so "call `splitFees` and charge the `payerTotal` it returns" is always correct.
+- If the plan is **absorb** (`absorb_all_fees`), `splitFees` returns `payerTotalFees: 0` and the merchant eats the cost — so "call `splitFees` and charge the `payerTotal` it returns" is always correct, as long as you take it from the right rail (next point).
+- **Use the rail that matches the payment method.** `splitFees` quotes every rail at once because what a plan charges differs by method. Charge the `payerTotal` and echo the `feeSplitType` of the rail you are actually charging: `cardPayments` for a card, `networkBankPayments` for a verified bank (`bankId`). A verified bank's rail carries discounts only, never a payer fee, so charging it with another rail's quote (e.g. `achBankPayments`) is rejected with a generic `400 apiError`.
 - **Multiple plans:** to target a specific plan rather than the merchant's default, pass **`feesIncentivesUrlKey`** (or `feeSettingPlanId`) on **both** calls.
 
 ## Receivable create — field names change between request and response (READ THIS)
@@ -91,14 +91,14 @@ The single most common “the response is missing the field I just sent” confu
 Consequences:
 - **Match incoming webhooks/responses on `extId`** (= the `erpId` you sent). “You write `erpId` and you read `extId` — they are the same value.”
 - **Compute the open balance as `amount − amountPaid`.** There is no `amountDue` on any response. A fully-unpaid invoice comes back `amountPaid: 0` (not `amountDue: 100`). Creating one with `amountDue: 0` comes back `paid` (surprising during backfills).
-- **`erpId` is IMMUTABLE after create.** Get it wrong and the only remedy is a new receivable.
+- **`erpId` can be changed after create** with `PUT /receivables/:id/update` (send the full body — a partial one fails on the missing `erpRef`). Webhooks match on it, so treat a change as a deliberate re-key, not a routine update.
 - Link the receivable to a customer with **EITHER `payerCustomerId` OR `extCustomerId`, never both**; the customer must exist first. `amountDue` must be ≤ `totalAmount`. Currency is `USD` or `CAD`.
-- (`invoiceId` is the older name for this key and is OPTIONAL; current docs use `erpId`. If a mapping layer still enforces `invoiceId` as required, that's stale validation.)
+- **`erpId` and `erpRef` are required.** A missing one returns `400 parameterMissing` under its stored name (`extId` / `invoiceKey`). There is no `invoiceId` alias.
 
 ## `GET /receivables/:id` vs `/read` return different shapes
 
-- `GET /v3/receivables/:id` returns the **same shape create returned** (the renamed fields above) — use this to assert against what you created.
-- `GET /v3/receivables/:id/read` returns a **different, older field set.** Don't mix them up when writing tests.
+- `GET /v3/receivables/:id/read` returns the **same shape create returned** (the renamed fields above) — use this to assert against what you created.
+- `GET /v3/receivables/:id` returns a **different, older field set** (`status: current`, `dateDue` as `MM-DD-YYYY`, no `date`). Don't mix them up when writing tests.
 
 ## ID chaining (store the right ID from each response)
 
@@ -123,7 +123,7 @@ Consequences:
 - **The merchant processing fee arrives LATER and separately — post it as its own journal entry.** The merchant fee is **not known at payment time**; it's finalized and retrievable a short while after the payment (in practice ~30 min later), and it comes via a **different call than the payment** (Fee data / `GET /fees` / embedded `fees[]`, not the payment webhook). Don't try to fold it into the payment receipt at capture. Recommended pattern (per Paystand Product): post the **full payment** and the **payer convenience fee** at payment time, then when the merchant fee finalizes, create a **separate JE to a dedicated processing-fee GL account**. The end-of-day **transfer/payout already nets out the merchant fee** (the deposit excludes it), so the ERP-side merchant-fee JE is what makes the clearing account reconcile.
 - **One GL account per fee type.** Map each to its own account so the connector can split cleanly: **convenience fee**, **merchant processing fee**, **discounts/incentives**, **disputes**. The merchant's accounting owns the profit/loss delta between the convenience fee collected and the merchant fee charged (they may gain or lose a few cents per txn — that's expected, not a bug).
 - **A break-even convenience fee must recoup BOTH the % and the flat.** Paystand's processing fee is `percentage + flat` (e.g. `3.5% + $0.35`). To break even, the merchant's convenience fee must match **both** components — a percentage-only surcharge (e.g. "3.5%") silently loses the per-transaction flat portion on every payment. When advising a merchant on their Fees & Incentives config, mirror the flat amount too.
-- **Credit memos are not applied by the API.** Apply them in the ERP, then re-sync the receivable with the updated amount. Negative receivable amounts are not supported. (Credit-memo endpoints DO exist for lifecycle ops — see endpoints.md.)
+- **Credit memos are not applied by the API itself.** Either the payer applies an active credit memo (`amountRemaining` > 0, same currency as the invoice) at checkout when credit memo checkout is enabled for the merchant, or you apply it in the ERP and re-sync: push the updated credit memo (`PUT /creditMemos/:id`, cancel/activate) and the receivable's new amount. Negative receivable amounts are not supported. (Credit-memo endpoints DO exist for lifecycle ops — see endpoints.md.)
 
 ## Webhook delivery & idempotency
 

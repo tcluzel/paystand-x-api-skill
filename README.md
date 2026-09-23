@@ -50,9 +50,18 @@ Then start (or restart) Claude Code. It loads the skill automatically when you a
 
 Upload the `psx-api/` folder (or the zip) as a custom Skill via the Skills API, or add it in claude.ai settings → Skills. See Anthropic's [Agent Skills docs](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview).
 
-### Any other Agent-Skills-compatible tool
+### Any other Agent-Skills-compatible tool (OpenAI Codex, OpenCode, VS Code, ...)
 
-Point the tool at the `psx-api/` directory. The format is the open standard: a `SKILL.md` with YAML frontmatter (`name`, `description`) plus supporting files loaded on demand.
+Most clients also discover skills in the cross-client `.agents/skills/` directory, so one copy serves every tool that follows the convention:
+
+```bash
+mkdir -p ~/.agents/skills            # personal, all projects
+cp -R psx-api ~/.agents/skills/
+# or, per project:
+mkdir -p .agents/skills && cp -R psx-api .agents/skills/
+```
+
+If your tool uses its own directory instead, point it at `psx-api/`. The format is the open standard: a `SKILL.md` with YAML frontmatter (`name`, `description`) plus supporting files loaded on demand. The `/psx-api` slash command used in this README is Claude Code's way of invoking a skill; other tools load it from its description or their own command syntax.
 
 ---
 
@@ -69,4 +78,4 @@ This skill mirrors and annotates the official docs at
 
 ---
 
-*Version 1.0.0*
+*Version 1.1.0*

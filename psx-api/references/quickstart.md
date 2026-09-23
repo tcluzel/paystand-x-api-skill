@@ -15,18 +15,18 @@
 ## Step 2 — Create a customer (must exist before any receivable)
 `POST /payerCustomers` body `{extCustomerId, customerName, email, contactFirstName, contactLastName}`.
 `extCustomerId` = your ERP primary key (≤40 chars, unique per merchant); Paystand **deduplicates on it** and returns it on every webhook. Use the real ERP key, NOT the returned `id` (that's Paystand's internal UUID).
-**Worked when:** 201 and the response contains an `id`.
+**Worked when:** 200 and the response contains an `id`.
 
 ## Step 3 — Create a receivable
 `POST /receivables/create` body `{extCustomerId, erpId, erpRef, totalAmount, amountDue, currency, postingDate, dueDate, status}`.
-- `erpId` = internal invoice key, never shown to payer, **immutable after create** (wrong → new receivable is the only fix). `erpRef` = human-readable invoice number the payer sees.
+- `erpId` = internal invoice key, never shown to payer; `erpRef` = human-readable invoice number the payer sees. **Both are required.** `erpId` can be changed later with `PUT /receivables/:id/update` (send the full body), but webhooks match on it, so keep it stable.
 - Link the customer with **`extCustomerId` OR `payerCustomerId`, never both.** `amountDue` ≤ `totalAmount`. Currency `USD` or `CAD`.
 - **Fields come back renamed** (see gotchas.md): `erpId→extId`, `totalAmount→amount`, `amountDue→` consumed as `amountPaid = totalAmount−amountDue`, `postingDate→date`, `dueDate→dateDue`.
-**Worked when:** 201 with `amount: 100.00`, `amountPaid: 0`, `status: active`.
+**Worked when:** 200 with `amount: 100.00`, `amountPaid: 0`, `status: active`.
 
 ## Step 4 — Attach the invoice PDF
-`POST /receivables/<receivableId>/attachments` multipart `attachment=@invoice.pdf`. **One file per call, PDF only** (extension + `%PDF-` magic bytes validated), **up to 3 per receivable, 20 MB each.**
-**Worked when:** 201 with `object: receivableAttachment`; `GET /v3/receivables/<id>` then lists it under `attachments`. (Use `GET /v3/receivables/<id>` — same shape as create; `…/read` returns a different, older field set.)
+`POST /receivables/<receivableId>/attachments` multipart `attachment=@invoice.pdf`. **One file per call, 20 MB each.** Send PDFs: when the merchant account enforces PDF-only attachments, the file content must be a PDF (the extension is not checked). The 3-attachment limit is enforced on files sent with Create Receivable, not on this endpoint.
+**Worked when:** 200 with `object: receivableAttachment`; `GET /v3/receivables/<id>/read` then lists it under `attachments`. (Use `…/read` — same shape as create; bare `GET /v3/receivables/<id>` returns a different, older field set.)
 
 ## Step 5 — Register webhook, then pay
 Dashboard → Integrations → Webhook Event URLs. Every registered URL gets **every** event (no per-URL filtering) — one handler, route on `resource.object`. Then from the merchant dashboard send the receivable to the test payer and pay with card `4242424242424242` (any future expiry, any CVC).
@@ -47,7 +47,7 @@ Cross-check: `GET /v3/receivables/<id>/transactions` (standard list envelope `{r
 |---|---|---|
 | `extCustomerId` | Yours | Request bodies (customer + receivable create). Same name both ways. |
 | `payerCustomer.id` | Paystand UUID | Path params: `/payerCustomers/:id` |
-| `erpId` | Yours | Receivable create body only. Immutable; returned as `extId`. |
+| `erpId` | Yours | Receivable create/update body. Returned as `extId`. |
 | `extId` | Yours, renamed | Every receivable response & webhook — **match on this**. |
 | `receivable.id` | Paystand | Path params: attachments, transactions |
 | `event.id` | Paystand | **Your idempotency key** |

@@ -19,7 +19,7 @@ Sandbox and production are separate credential sets (`client_id`, `client_secret
 
 ## v1 data movement
 
-- **ERP → Paystand:** create the customer before its receivables. Customers key on `extCustomerId`, receivables on `erpId` (immutable after create) — pick the right keys. Sync invoices on post. Up to 3 PDFs per receivable. Currency USD or CAD.
+- **ERP → Paystand:** create the customer before its receivables. Customers key on `extCustomerId`, receivables on `erpId` (required; changeable later only by a deliberate update, and webhooks match on it) — pick the right keys. Sync invoices on post. Up to 3 PDFs per receivable. Currency USD or CAD.
 - **Paystand → ERP:** subscribe to webhooks (don't poll); use read endpoints to backfill after an outage. Delivery is at-least-once → **dedupe on event `id`.**
 
 | Event | Use it for | Key fields |
