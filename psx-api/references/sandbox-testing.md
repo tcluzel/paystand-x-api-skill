@@ -8,7 +8,7 @@ These are Paystand's PUBLIC sandbox test values (published on the developer docs
 - Auth: Integrations OAuth (`POST /oauth/token`, `scope: auth`) + your merchant `X-CUSTOMER-ID` from Dashboard → Integrations.
 - Public docs are validated against Paystand's dummy sandbox merchant.
 - **Known Integrations-token gaps** (other routes work on same merchant): `GET /fees`, `GET /fees/{id}`, `POST /fees/compute`, `GET /feeSettingPlan/{id}`, `GET /customers/timezone`. Use documented fallbacks (embedded `fees[]` on Get Payment, etc.).
-- Pre-payment payer fees: call Split Fees with `provider: receivable`, `payerId`, `invoiceId` (receivable ID) — not subtotal alone.
+- Pre-payment payer fees: `subtotal` + `currency` quotes the default plan; call Split Fees with `provider: receivable`, `payerId`, `invoiceId` (receivable ID) to resolve the plan for a specific receivable.
 
 ## Sandbox payment limits (simulated)
 

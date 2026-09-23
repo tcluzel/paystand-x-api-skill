@@ -1,8 +1,9 @@
 ---
 name: psx-api
 description: "Build an integration against the Paystand X (PSX) REST API — authentication, endpoints, webhooks, ERP sync patterns, sandbox testing, reconciliation, and known gotchas. Use when integrating an ERP or middleware/iPaaS with Paystand X, or when the user mentions Paystand X, PSX, the Paystand X API, receivables/payments sync, or Paystand webhooks."
-version: 1.1.0
-license: "Provided by Paystand for integration partners. Free to use and redistribute."
+license: MIT
+metadata:
+  version: "1.1.0"
 ---
 
 # Paystand X (PSX) Public API
@@ -44,7 +45,7 @@ Mixing these up is a common cause of auth/404 failures. Sandbox = `.co`, product
 1. **Authenticate** → `POST /oauth/token`.
 2. **Customers (payers)** → create/update via `POST /payerCustomers` / `PUT /payerCustomers/:id`. Store both Paystand `payerCustomer.id` and your `extCustomerId` (ERP key).
 3. **Receivables (invoices)** → `POST /receivables/create`, linking `payerCustomerId` **or** `extCustomerId` (only one required; the customer must exist first). Poll changes with `GET /receivables` (filtered).
-4. **Attachments** (optional) → `POST /receivables/:id/attachments` (PDF only, multipart, one file per call). **Up to 3 PDFs per receivable, 20 MB each**; `%PDF-` magic bytes validated.
+4. **Attachments** (optional) → `POST /receivables/:id/attachments` (multipart, one file per call, **20 MB each**). Send PDFs: when the merchant account enforces PDF-only attachments, the file *content* must be a PDF (the extension is not checked). The 3-attachment limit is enforced on files sent with Create Receivable, not on this endpoint.
 5. **Payments & applications** → poll `GET /payments/all` and per-receivable transactions; subscribe to Payment / Receivable-Transaction webhooks when available.
 6. **Fees** → merchant processing: `GET /fees` + Fee Events. Payer recoup/surcharge: `POST /feeSplits/splitFees` + `feeSplit` on Get Payment.
 7. **Credit memos** → CRUD + cancel/activate.
@@ -69,12 +70,12 @@ There is **no hard delete** in the public API. Void an invoice with `POST /recei
 
 ## Critical known issues (read before you build)
 
-- **Receivable fields are RENAMED between request and response.** You send `erpId / totalAmount / amountDue / postingDate / dueDate`; they come back as `extId / amount / amountPaid / date / dateDue` (`amountDue` is consumed: `amountPaid = totalAmount − amountDue`). **Match webhooks on `extId`; compute open balance as `amount − amountPaid`.** `erpId` is immutable after create. (Full mapping in `references/gotchas.md`.)
+- **Receivable fields are RENAMED between request and response.** You send `erpId / totalAmount / amountDue / postingDate / dueDate`; they come back as `extId / amount / amountPaid / date / dateDue` (`amountDue` is consumed: `amountPaid = totalAmount − amountDue`). **Match webhooks on `extId`; compute open balance as `amount − amountPaid`.** `erpId` can be changed later through Update Receivable, so keep it stable on your side — every webhook matches on it. (Full mapping in `references/gotchas.md`.)
 - **The convenience (payer) fee is NOT a Fee event.** It lives on `payment.feeSplit` (`payerTotalFees` = fee, `subtotal` = invoice portion). Fee events carry only Paystand's *merchant* processing cost — and a fee is final only when `feeType` is `paystand`; a `delayed` fee has no usable amount, so don't post it.
 - **Do NOT send `externalId` at the top level of a bank object** when adding a payer bank. The backend misreads it as a Stripe payment-method ID and tries to create a `StripeSetupIntent`, so bank creation fails. Put your reference in `meta.externalId` instead.
 - **Guard against double-payment / double-counting.** (a) A payment applied in Paystand may lag syncing back to the ERP — sync status promptly (webhooks) so the same invoice isn't paid twice. (b) One checkout can emit many Receivable Transaction events sharing one `paymentId`; sum `amountApplied` — summing those *and* `payment.amount` double-counts.
 - **Webhooks are at-least-once** — dedupe on event `id`; timestamps are authoritative, arrival order is not; return 2xx within 15 s.
-- **`invoiceId` / `erpId` is OPTIONAL** on receivable create (older `create-receivable` docs may still say REQUIRED — stale).
+- **`erpId` and `erpRef` are REQUIRED** on receivable create. Omitting either returns `400` with `detailCode: parameterMissing`, reported under the stored names (`extId` for `erpId`, `invoiceKey` for `erpRef`). There is no `invoiceId` alias.
 - **Multi-entity merchants: enable API credentials per instance.** For a merchant with separate entities/instances (e.g. US + Canada), each instance exposes its **own** `client_id`/`client_secret` on its Integrations page, and each may need API access enabled separately. A missing Canada credential is a per-instance enablement gap, not a code bug.
 - Full troubleshooting catalog: `references/gotchas.md`. Onboarding/data-migration mechanics: `references/implementation-lessons.md`. **Fastest first integration: `references/quickstart.md`** (ordered token → customer → invoice → PDF → test payment → webhook path, with a runnable Postman collection in `assets/`).
 
@@ -91,7 +92,7 @@ There is **no hard delete** in the public API. Void an invoice with `POST /recei
 
 ## What this API does NOT do today
 
-See `references/endpoints.md` → “Not supported today.” Highlights: no merchant-wide bulk list of receivable transactions (per-receivable only), no date-range filter on fees or credit memos, no sub-day time windows (calendar-day only), no hard delete. Credit memos are not applied by the API — apply them in the ERP and re-sync the receivable.
+See `references/endpoints.md` → “Not supported today.” Highlights: no merchant-wide bulk list of receivable transactions (per-receivable only), no date-range filter on fees or credit memos, no sub-day time windows (calendar-day only), no hard delete. The API does not apply credit memos itself: the payer applies an active credit memo at checkout (when credit memo checkout is enabled for the merchant), or you apply it in the ERP and re-sync the updated credit memo and receivable.
 
 ## Scope note
 

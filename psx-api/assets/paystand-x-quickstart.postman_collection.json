@@ -157,7 +157,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
               "",
               "const body = pm.response.json();",
               "",
@@ -233,7 +233,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
               "",
               "const body = pm.response.json();",
               "",
@@ -250,7 +250,7 @@
               "pm.collectionVariables.set('receivableId', body.id);",
               "",
               "console.log(`Sent erpId=${pm.collectionVariables.get('erpId')} -> returned extId=${body.extId} (same value, renamed).`);",
-              "console.log('That value is now immutable. Changing it requires a new receivable.');",
+              "console.log('Webhooks match on that value. Keep it stable; change it only through a deliberate Update Receivable.');",
               "console.log(`Outstanding balance is amount - amountPaid = ${Number(body.amount) - Number(body.amountPaid)}`);"
             ]
           }
@@ -291,7 +291,7 @@
             "create"
           ]
         },
-        "description": "Note the path is /receivables/create, not /receivables.\n\nTwo of your IDs are in play and they are not interchangeable:\n\n- `erpId` \u2014 internal invoice key, never shown to the payer, IMMUTABLE after create.\n- `erpRef` \u2014 the invoice number the payer sees.\n\nLink the customer with either `extCustomerId` or `payerCustomerId`, never both. `amountDue` must be <= `totalAmount`. API currency is USD or CAD."
+        "description": "Note the path is /receivables/create, not /receivables.\n\nTwo of your IDs are in play and they are not interchangeable:\n\n- `erpId` \u2014 internal invoice key, never shown to the payer. Required; webhooks match on it, so keep it stable.\n- `erpRef` \u2014 the invoice number the payer sees. Required.\n\nLink the customer with either `extCustomerId` or `payerCustomerId`, never both. `amountDue` must be <= `totalAmount`. API currency is USD or CAD."
       }
     },
     {
@@ -302,7 +302,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
               "",
               "const body = pm.response.json();",
               "",
@@ -346,7 +346,7 @@
             "attachments"
           ]
         },
-        "description": "One file per call, PDF only \u2014 both the extension and the %PDF- magic bytes are validated. Up to three attachments per receivable, 20 MB each.\n\nDo not set Content-Type by hand; Postman sets the multipart boundary for you.\n\nYou must select a PDF in the Body tab before this request will work."
+        "description": "One file per call, 20 MB each. Send PDFs: when the merchant account enforces PDF-only attachments, the file content must be a PDF (the extension is not checked). The three-attachment limit is enforced on files sent with Create Receivable, not on this upload.\n\nDo not set Content-Type by hand; Postman sets the multipart boundary for you.\n\nYou must select a PDF in the Body tab before this request will work."
       }
     },
     {
