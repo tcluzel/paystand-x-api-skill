@@ -78,4 +78,10 @@ This skill mirrors and annotates the official docs at
 
 ---
 
+## Contributing / maintainers
+
+This skill is public and shareable with external developers. When editing, keep specific customer names, support-ticket numbers, and internal-only URLs OUT of the skill files — describe behavior generically so any integrator can use it.
+
+---
+
 *Version 1.1.0*

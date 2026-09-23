@@ -1,6 +1,6 @@
 # PSX API — iPaaS / ERP Connector Reference Pattern
 
-> Generalized from a real Product-authored connector brief for a merchant moving onto an ERP with **no native Paystand integration**, connected via an iPaaS (Flowgear-class) middleware. Customer name removed; the pattern, ownership split, and journal-entry model are reusable for any PSX-API + iPaaS + ERP build. This is the canonical worked example of the full **event → ERP posting** flow.
+> A reusable reference pattern for a merchant moving onto an ERP with **no native Paystand integration**, connected via an iPaaS/middleware platform. The ownership split and journal-entry model apply to any PSX-API + iPaaS + ERP build. This is the canonical worked example of the full **event → ERP posting** flow.
 
 ## When this pattern applies
 

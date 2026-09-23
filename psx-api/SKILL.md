@@ -38,7 +38,7 @@ Mixing these up is a common cause of auth/404 failures. Sandbox = `.co`, product
    The `X-CUSTOMER-ID` (merchant `customer_id`) is required on every request and is distinct from a payer customer ID (see ID chaining below).
 
 - No facilitator/platform token needed — plain merchant API credentials are enough.
-- `insufficient_scope` error → API keys not enabled on the plan (`show_api_keys`) or wrong `scope` (must be `auth`).
+- `insufficient_scope` error → API access not enabled for the plan, or wrong `scope` (must be `auth`).
 
 ## Recommended sync order (ERP integration)
 
@@ -66,7 +66,7 @@ There is **no hard delete** in the public API. Void an invoice with `POST /recei
 
 ## When NOT to use PSX API (hard architectural constraint)
 
-**PSX API must not run as a second AR / reconciliation layer on top of a Paystand NATIVE ERP integration** (NetSuite, Sage Intacct, Business Central, Acumatica). PSX is built for ERPs where Paystand has **no** native integration. Running PSX alongside a native integration against the same accounting system creates **overlapping ownership of receivables and payments** → reconciliation conflicts, broken transfer reporting, duplicate/mismatched payment records, and accounting inconsistencies in the ERP. An external/ISV app that only needs to *initiate payment* on top of a native integration is a different motion — evaluate the **Paystand Checkout/API pattern** (coexistence rules + open questions in `references/implementation-lessons.md`), not PSX as a second AR layer. (Design constraint per internal architecture review, 2026-09.)
+**PSX API must not run as a second AR / reconciliation layer on top of a Paystand NATIVE ERP integration** (NetSuite, Sage Intacct, Business Central, Acumatica). PSX is built for ERPs where Paystand has **no** native integration. Running PSX alongside a native integration against the same accounting system creates **overlapping ownership of receivables and payments** → reconciliation conflicts, broken transfer reporting, duplicate/mismatched payment records, and accounting inconsistencies in the ERP. An external/ISV app that only needs to *initiate payment* on top of a native integration is a different motion — evaluate the **Paystand Checkout/API pattern** (coexistence rules + open questions in `references/implementation-lessons.md`), not PSX as a second AR layer.
 
 ## Critical known issues (read before you build)
 
@@ -96,4 +96,4 @@ See `references/endpoints.md` → “Not supported today.” Highlights: no merc
 
 ## Scope note
 
-This is the **PSX API** skill (system-to-system REST). It is separate from CSV/dashboard workflows and from the `vulcan-psx` column-mapping skill. Keep customer names, ticket numbers, and internal URLs OUT of this skill — it is written to be shareable with external developers.
+This is the **PSX API** skill (system-to-system REST). It is separate from CSV/dashboard workflows and from column-mapping configuration. This skill is written to be shareable with external developers.
