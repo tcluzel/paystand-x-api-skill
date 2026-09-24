@@ -38,7 +38,7 @@ psx-api/
 /plugin install psx-api@paystand
 ```
 
-Then start (or restart) Claude Code. It loads automatically when you work on a Paystand X integration, or invoke it with **`/psx-api`**.
+The skill activates immediately. It loads automatically when you work on a Paystand X integration, or invoke it with **`/psx-api`**.
 
 ### Claude Code — manual skill install (stable)
 
@@ -101,4 +101,4 @@ When you change the skill, update **both** copies (they are byte-identical) befo
 
 ---
 
-*Version 1.1.0*
+*Version 0.9.0-beta*
