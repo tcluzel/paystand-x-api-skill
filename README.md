@@ -29,7 +29,18 @@ psx-api/
 
 ## Install
 
-### Claude Code
+### Claude Code — plugin (BETA, one-command)
+
+> ⚠️ **Beta.** Plugin packaging is new; if it misbehaves, use the manual skill install below (stable).
+
+```
+/plugin marketplace add tcluzel/paystand-x-api-skill
+/plugin install psx-api@paystand
+```
+
+Then start (or restart) Claude Code. It loads automatically when you work on a Paystand X integration, or invoke it with **`/psx-api`**.
+
+### Claude Code — manual skill install (stable)
 
 **Personal (available in all your projects):**
 ```bash
@@ -81,6 +92,12 @@ This skill mirrors and annotates the official docs at
 ## Contributing / maintainers
 
 This skill is public and shareable with external developers. When editing, keep specific customer names, support-ticket numbers, and internal-only URLs OUT of the skill files — describe behavior generically so any integrator can use it.
+
+**Repository layout — the skill exists in two places (keep them in sync):**
+- `psx-api/` — the standalone skill (used by the manual install and by other Agent-Skills tools).
+- `plugins/psx-api/skills/psx-api/` — the same skill, bundled inside the Claude Code plugin (BETA).
+
+When you change the skill, update **both** copies (they are byte-identical) before committing.
 
 ---
 

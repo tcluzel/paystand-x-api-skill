@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "paystand",
+  "version": "0.9.0-beta",
+  "description": "BETA — Paystand developer plugins for Claude Code. Currently ships the Paystand X (PSX) API skill for building ERP / middleware / iPaaS integrations.",
+  "owner": {
+    "name": "Thomas Cluzel",
+    "email": "tcluzel@paystand.com"
+  },
+  "plugins": [
+    {
+      "name": "psx-api",
+      "description": "BETA — Deep, accurate knowledge of the Paystand X (PSX) public REST API: authentication, endpoints, webhooks, ERP sync patterns, sandbox testing, reconciliation, and known gotchas. Use when building an ERP / middleware / iPaaS integration against Paystand X.",
+      "version": "0.9.0-beta",
+      "source": "./plugins/psx-api",
+      "category": "development",
+      "author": {
+        "name": "Thomas Cluzel",
+        "email": "tcluzel@paystand.com"
+      }
+    }
+  ]
+}

@@ -1,0 +1,509 @@
+{
+  "info": {
+    "name": "Paystand X API \u2014 Quick Start",
+    "description": "The six-call happy path for a Paystand X integration: token, customer, receivable, PDF, then read the money back.\n\n## Setup\n\nFill three collection variables from Paystand Dashboard -> Integrations: `clientId`, `clientSecret`, `customerId`. Leave everything else alone; the requests fill them in as they go.\n\nDefault `baseUrl` is sandbox (`https://api.paystand.co/v3`). Production is `https://api.paystand.com/v3` with a completely separate credential set.\n\n## Running it\n\nRun the requests in order, or use the Collection Runner. Request 1 mints a token and a fresh `runId`, so the whole collection is safely re-runnable \u2014 each run creates a new customer and invoice rather than colliding on IDs that Paystand deduplicates.\n\nRequest 4 needs you to pick a local PDF in the Body tab; Postman cannot store the file itself.\n\nBetween requests 5 and 6, send the receivable to the test payer from the merchant dashboard and pay it with card 4242424242424242 (any future expiry, any CVC). Use 4000000000000077 instead if you want the Transfer chain to fire the same day.\n\n## Note\n\nEvery authenticated call sends two headers: `Authorization` and `X-CUSTOMER-ID`. Omitting the second returns 401 \u2014 the same status as a bad token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.paystand.co/v3",
+      "type": "string",
+      "description": "Sandbox. Production is https://api.paystand.com/v3"
+    },
+    {
+      "key": "clientId",
+      "value": "",
+      "type": "string",
+      "description": "Dashboard -> Integrations"
+    },
+    {
+      "key": "clientSecret",
+      "value": "",
+      "type": "string",
+      "description": "Dashboard -> Integrations. Never commit this."
+    },
+    {
+      "key": "customerId",
+      "value": "",
+      "type": "string",
+      "description": "Merchant identifier for the X-CUSTOMER-ID header"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string",
+      "description": "Set by request 1"
+    },
+    {
+      "key": "runId",
+      "value": "",
+      "type": "string",
+      "description": "Set by request 1 to keep re-runs from colliding"
+    },
+    {
+      "key": "extCustomerId",
+      "value": "",
+      "type": "string",
+      "description": "Set by request 2"
+    },
+    {
+      "key": "erpId",
+      "value": "",
+      "type": "string",
+      "description": "Set by request 3"
+    },
+    {
+      "key": "payerCustomerId",
+      "value": "",
+      "type": "string",
+      "description": "Paystand internal customer UUID, set by request 2"
+    },
+    {
+      "key": "receivableId",
+      "value": "",
+      "type": "string",
+      "description": "Paystand internal receivable ID, set by request 3"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Get access token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "const body = pm.response.json();",
+              "",
+              "pm.test('returned an access token', () => pm.expect(body.access_token).to.be.a('string').and.not.empty);",
+              "pm.test('token type is Bearer', () => pm.expect(String(body.token_type)).to.match(/bearer/i));",
+              "",
+              "pm.collectionVariables.set('accessToken', body.access_token);",
+              "",
+              "// A fresh run id keeps re-runs from colliding on IDs Paystand dedupes.",
+              "pm.collectionVariables.set('runId', String(Date.now()).slice(-8));",
+              "",
+              "const days = Math.round((body.expires_in || 0) / 86400);",
+              "console.log(`Token stored. Expires in ~${days} day(s) \u2014 refresh on a schedule, not per request.`);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{clientId}}\",\n  \"client_secret\": \"{{clientSecret}}\",\n  \"scope\": \"auth\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/oauth/token",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "oauth",
+            "token"
+          ]
+        },
+        "description": "Client-credentials grant. The token is valid for 1,209,600 seconds (14 days).\n\nThis is the only request in the collection that sends no auth headers."
+      }
+    },
+    {
+      "name": "2. Create customer",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('extCustomerId', `TEST-${pm.collectionVariables.get('runId')}`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "const body = pm.response.json();",
+              "",
+              "pm.test('returned a Paystand customer id', () => pm.expect(body.id).to.be.a('string').and.not.empty);",
+              "",
+              "pm.collectionVariables.set('payerCustomerId', body.id);",
+              "",
+              "console.log(`Yours: extCustomerId=${pm.collectionVariables.get('extCustomerId')} (goes in request bodies)`);",
+              "console.log(`Paystand's: id=${body.id} (goes in URL paths)`);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-CUSTOMER-ID",
+            "value": "{{customerId}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"extCustomerId\": \"{{extCustomerId}}\",\n  \"customerName\": \"Acme Dental Group\",\n  \"email\": \"ap@example.com\",\n  \"contactFirstName\": \"Dana\",\n  \"contactLastName\": \"Reed\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payerCustomers",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payerCustomers"
+          ]
+        },
+        "description": "The customer must exist before any receivable can point at it.\n\n`extCustomerId` is your ERP's customer key \u2014 up to 40 characters, unique per merchant. Paystand deduplicates on it, and it comes back on every webhook, so use the real key rather than something invented for the test.\n\nA second create with the same `extCustomerId` is rejected rather than duplicated. Use PUT /payerCustomers/:id to change an existing one."
+      }
+    },
+    {
+      "name": "3. Create receivable",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const pad = (n) => String(n).padStart(2, '0');",
+              "const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;",
+              "",
+              "const today = new Date();",
+              "const due = new Date(today.getTime() + 30 * 86400000);",
+              "",
+              "pm.collectionVariables.set('postingDate', iso(today));",
+              "pm.collectionVariables.set('dueDate', iso(due));",
+              "pm.collectionVariables.set('erpId', `TEST-INV-${pm.collectionVariables.get('runId')}`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "const body = pm.response.json();",
+              "",
+              "pm.test('returned a receivable id', () => pm.expect(body.id).to.be.a('string').and.not.empty);",
+              "pm.test('status is active', () => pm.expect(body.status).to.eql('active'));",
+              "",
+              "// Every field is renamed on write: totalAmount -> amount, amountDue -> amountPaid",
+              "// (as totalAmount - amountDue), erpId -> extId, postingDate -> date, dueDate -> dateDue.",
+              "// There is no amountDue, totalAmount or erpId on any response.",
+              "pm.test('totalAmount came back as amount', () => pm.expect(Number(body.amount)).to.eql(100));",
+              "pm.test('nothing paid yet', () => pm.expect(Number(body.amountPaid)).to.eql(0));",
+              "pm.test('erpId came back as extId', () => pm.expect(body.extId).to.eql(pm.collectionVariables.get('erpId')));",
+              "",
+              "pm.collectionVariables.set('receivableId', body.id);",
+              "",
+              "console.log(`Sent erpId=${pm.collectionVariables.get('erpId')} -> returned extId=${body.extId} (same value, renamed).`);",
+              "console.log('Webhooks match on that value. Keep it stable; change it only through a deliberate Update Receivable.');",
+              "console.log(`Outstanding balance is amount - amountPaid = ${Number(body.amount) - Number(body.amountPaid)}`);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-CUSTOMER-ID",
+            "value": "{{customerId}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"extCustomerId\": \"{{extCustomerId}}\",\n  \"erpId\": \"{{erpId}}\",\n  \"erpRef\": \"INV-{{runId}}\",\n  \"totalAmount\": \"100.00\",\n  \"amountDue\": \"100.00\",\n  \"currency\": \"USD\",\n  \"postingDate\": \"{{postingDate}}\",\n  \"dueDate\": \"{{dueDate}}\",\n  \"status\": \"active\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/receivables/create",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "receivables",
+            "create"
+          ]
+        },
+        "description": "Note the path is /receivables/create, not /receivables.\n\nTwo of your IDs are in play and they are not interchangeable:\n\n- `erpId` \u2014 internal invoice key, never shown to the payer. Required; webhooks match on it, so keep it stable.\n- `erpRef` \u2014 the invoice number the payer sees. Required.\n\nLink the customer with either `extCustomerId` or `payerCustomerId`, never both. `amountDue` must be <= `totalAmount`. API currency is USD or CAD."
+      }
+    },
+    {
+      "name": "4. Upload invoice PDF",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "const body = pm.response.json();",
+              "",
+              "pm.test('returned an attachment', () => pm.expect(body.object).to.eql('receivableAttachment'));",
+              "pm.test('kept the original filename', () => pm.expect(body.name).to.be.a('string').and.not.empty);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-CUSTOMER-ID",
+            "value": "{{customerId}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "attachment",
+              "type": "file",
+              "src": [],
+              "description": "Pick a local .pdf. Postman cannot store the file in the collection."
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/receivables/{{receivableId}}/attachments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "receivables",
+            "{{receivableId}}",
+            "attachments"
+          ]
+        },
+        "description": "One file per call, 20 MB each. Send PDFs: when the merchant account enforces PDF-only attachments, the file content must be a PDF (the extension is not checked). The three-attachment limit is enforced on files sent with Create Receivable, not on this upload.\n\nDo not set Content-Type by hand; Postman sets the multipart boundary for you.\n\nYou must select a PDF in the Body tab before this request will work."
+      }
+    },
+    {
+      "name": "5. Get receivable (verify state)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "const body = pm.response.json();",
+              "",
+              "pm.test('the PDF is attached', () => pm.expect(body.attachments).to.be.an('array').with.length.above(0));",
+              "",
+              "console.log(`extId=${body.extId} amount=${body.amount} amountPaid=${body.amountPaid} status=${body.status}`);",
+              "console.log('Now send this receivable to the test payer from the dashboard and pay it with 4242424242424242.');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-CUSTOMER-ID",
+            "value": "{{customerId}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/receivables/{{receivableId}}/read",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "receivables",
+            "{{receivableId}}",
+            "read"
+          ]
+        },
+        "description": "Confirms the invoice exists with the PDF attached and is payable.\n\nNote the /read suffix. Bare GET /receivables/:id also resolves but returns a different, older field set. /read returns the same shape create returned, which is what you want to assert against.\n\nThis is the checkpoint before you leave the API and go pay the invoice in the dashboard."
+      }
+    },
+    {
+      "name": "6. List receivable transactions (after paying)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "// Standard list envelope: { results, count, settings } \u2014 not a bare array.",
+              "const rows = pm.response.json().results || [];",
+              "",
+              "if (rows.length === 0) {",
+              "  console.log('No transactions yet. Pay the invoice in the dashboard first, then re-run.');",
+              "  return;",
+              "}",
+              "",
+              "rows.forEach((t) => {",
+              "  console.log(`${t.resourceType} applied ${t.amountApplied} (paymentId=${t.paymentId})`);",
+              "});",
+              "",
+              "// amountApplied is the INVOICE portion. payment.amount is the gross the payer",
+              "// was charged, including any convenience fee. Summing both double-counts.",
+              "const applied = rows.reduce((sum, t) => sum + Number(t.amountApplied || 0), 0);",
+              "console.log(`Total applied to this invoice: ${applied}`);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-CUSTOMER-ID",
+            "value": "{{customerId}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/receivables/{{receivableId}}/transactions",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "receivables",
+            "{{receivableId}}",
+            "transactions"
+          ]
+        },
+        "description": "Read-only. Returns the payments and refunds applied to this invoice, in the same shape as the Receivable Transaction webhook.\n\n`amountApplied` is the invoice portion only. On a $100 invoice with a $3 convenience fee this is 100.00, while payment.amount is 103.00 \u2014 both correct, different numbers. Derive the payer fee from payment.feeSplit.payerTotalFees.\n\nUse this endpoint for reconciliation and outage backfill, not as a replacement for webhooks."
+      }
+    },
+    {
+      "name": "7. List transfers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "const rows = pm.response.json().results || [];",
+              "",
+              "if (rows.length === 0) {",
+              "  console.log('No payouts yet. Card 4000000000000077 skips the holding period if you want this to fire today.');",
+              "  return;",
+              "}",
+              "",
+              "rows.slice(0, 5).forEach((t) => {",
+              "  console.log(`${t.status} ${t.amount} ${t.currency} settled=${t.dateSettled || 'pending'}`);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-CUSTOMER-ID",
+            "value": "{{customerId}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/transfers?limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "transfers"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "Read-only \u2014 Paystand owns the payout schedule.\n\nA payout is a lump covering the period's activity, net of merchant fees, not one transfer per payment. This is what you reconcile the bank deposit against.\n\nAll list endpoints share the same contract: limit (default 50), offset (default 0), order. Responses carry results, count, and settings."
+      }
+    }
+  ]
+}

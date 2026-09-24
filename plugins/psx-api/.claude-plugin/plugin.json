@@ -1,0 +1,11 @@
+{
+  "name": "psx-api",
+  "description": "BETA — Paystand X (PSX) public REST API skill: authentication, endpoints, webhooks, ERP sync patterns, sandbox testing, reconciliation, and the non-obvious gotchas that bite real integrations. Loads automatically when you work on a Paystand X integration, or invoke it with /psx-api.",
+  "version": "0.9.0-beta",
+  "author": {
+    "name": "Thomas Cluzel",
+    "email": "tcluzel@paystand.com"
+  },
+  "homepage": "https://github.com/tcluzel/paystand-x-api-skill",
+  "license": "MIT"
+}
